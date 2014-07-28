@@ -64,6 +64,9 @@
 							send(last);
 						}
 					}
+					return true;
+				} else {
+					return false;
 				}
 		    }
 		};
@@ -88,6 +91,9 @@
 						send('Stars get removed under peer-pressure?');
 						seen[idx] = 0;
 					}
+					return true;
+				} else {
+					return false;
 				}
 			}
 		};
@@ -128,6 +134,9 @@
 					default:
 						break;
 					}
+					return true;
+				} else {
+					return false;
 				}
 			}
 		};
@@ -158,6 +167,9 @@
 							last = undefined;
 						}
 					}
+					return true;
+				} else {
+					return false;
 				}
 			}
 		};
@@ -175,9 +187,31 @@
 					send('No, @' + ce.user_name + ' that only works on NOVELL NETWARE');
 					going = true;
 					window.setTimeout(function () { going = false; }, minutes(1));
+					return true;
+				} else {
+					return false;
 				}
 			}
 		};
+	}
+	
+	function Wut() {
+		var i = 0;
+		return {
+			next: function(ce) {
+				if (ce.event_type === 1) {
+					switch (i) {
+						case 0:
+							send('WUT?');
+							break;
+				         	case 1:
+							send('What are you talking about?');
+							i = 0;
+							break;
+					}
+				}
+			}
+		}
 	}
 
 	/* register all statemachines */
@@ -186,14 +220,20 @@
 	states.push(new Coffee());
 	states.push(new Cupcake());
 	states.push(new Shutdown());
+	states.push(new Wut());
 
 	function handleEvent(ce) {
 		var i;
 		if (ce.user_id === thisuser) {
 			handleCommands(ce);
 		} else {
-			for (i = 0; i < states.length; i = i + 1) {
-				states[i].next(ce);
+			var commandExecuted = false;
+			var length = states.length;
+			for (i = 0; i < length - 1; i = i + 1) {
+				commandExecuted |= states[i].next(ce);
+			}
+			if (!commandExecuted) {
+				states[length - 1].next(ce);
 			}
 		}
 	}
