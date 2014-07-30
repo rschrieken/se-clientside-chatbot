@@ -59,9 +59,8 @@
                         last = ce.content;
                         lastcnt = 0;
                     } else {
-                        if (lastcnt !== 3) {
-                            lastcnt = lastcnt + 1;
-                        } else {
+						lastcnt = lastcnt + 1;
+                        if (lastcnt === 3) {
                             send(last);
                         }
                     }
@@ -72,13 +71,16 @@
 
     /*detect starring a message */
     function StarResponse() {
-        var seen = [], idx, idxzero;
+        var seen = [], idx, idxzero, backoffFirst = false, backoffSecond = false;
         return {
             next: function (ce) {
-                if (ce.event_type === 6) {
+                if (ce.event_type === 6
+                        && (!backoffFirst || !backoffSecond)) {
                     idx = seen.indexOf(ce.message_id);
-                    if (idx < 0) {
+                    if (idx < 0 && !backoffFirst) {
                         send('Not everything is star-worthy...');
+                        backoffFirst = true;
+                        window.setTimeout(function () { backoffFirst = false; }, minutes(60));
                         idxzero = seen.indexOf(0);
                         if (idxzero > -1) {
                             seen[idxzero] = ce.message_id;
@@ -86,8 +88,12 @@
                             seen.push(ce.message_id);
                         }
                     } else {
-                        send('Stars get removed under peer-pressure?');
-                        seen[idx] = 0;
+                        if (idx === 0 && !backoffSecond) {
+                            send('Stars get removed under peer-pressure?');
+                            seen[idx] = 0;
+                            backoffSecond = true;
+                            window.setTimeout(function () { backoffSecond = false; }, minutes(60));
+                        }
                     }
                 }
             }
@@ -116,8 +122,9 @@
                         }
                         break;
                     case 3:
-                        if ((Date.now() - last) < minutes(2)) {
+                        if ((Date.now() - last) < minutes(10)) {
                             send('Too much coffee is bad....');
+							state = 5;
                         } else {
                             state = 4;
                         }
@@ -125,8 +132,11 @@
                     case 4:
                         send('Refilling...');
                         window.setTimeout(function () { state = 1; }, seconds(10));
-                        state = 5;
+                        state = 6;
                         break;
+					case 5:
+						window.setTimeout(function () { state = 4; }, minutes(10));
+						break;
                     default:
                         break;
                     }
@@ -145,11 +155,11 @@
                         && (ce.content === '!!cupcake'));
                 if (handled) {
                     if (typeof last !== 'number') {
-                        send('One cupcake on it\'s way');
-                        sendDelayed('One cupcake for @' + ce.user_name, 25);
+                        send('One cupcake on it\'s way for @' + ce.user_name + '  ....');
+                        sendDelayed(':' + ce.message_id + ' http://i.stack.imgur.com/87OMls.jpg', 25);
                         last = Date.now();
                     } else {
-                        if (((Date.now() - last) < minutes(1))) {
+                        if (((Date.now() - last) < minutes(10))) {
                             if (!exhausted) {
                                 send('Out of dough...');
                                 exhausted = true;
@@ -180,6 +190,17 @@
                     send('No, @' + ce.user_name + ' that only works on NOVELL NETWARE');
                     going = true;
                     window.setTimeout(function () { going = false; }, minutes(1));
+                }
+            }
+        };
+    }
+
+	function Silence() {
+        return {
+            next: function (ce) {
+                if (ce.event_type === 1 &&
+                        ce.content === '!!silence') {
+                    silent = true;
                 }
             }
         };
@@ -218,6 +239,7 @@
     states.push(new Coffee());
     states.push(new Cupcake());
     states.push(new Shutdown());
+	states.push(new Silence());
     states.push(unk);
 
     function handleEvent(ce) {
@@ -233,16 +255,18 @@
                     if (single) {
                         commandExecuted = true;
                     }
-                    console.log('handle ' + i.toString() + 'single:' + single.toString());
+                    /* console.log('handle ' + i.toString() + 'single:' + single.toString()); */
                 }
             }
-            console.log('commandExecuted ' + commandExecuted.toString());
+            /* console.log('commandExecuted ' + commandExecuted.toString());
             console.log('event_type ' + ce.event_type.toString());
-            console.log('ce.content.indexOf(\'!!\') ' + ce.content.indexOf('!!').toString());
+            console.log('ce.content.indexOf(\'!!\') ' + ce.content.indexOf('!!').toString()); */
             if (!commandExecuted
                     && ce.event_type === 1
-                    && ce.content.indexOf('!!') === 0) {
-                unk.next({event_type: 1, content: '!!wut'}); //HACK
+                    && ce.content !== undefined) {
+                if (ce.content.indexOf('!!') === 0) {
+                    unk.next({event_type: 1, content: '!!wut'}); //HACK
+                }
             }
         }
     }
@@ -342,11 +366,54 @@
             }
         }
 
+        // arr has event times in (milli)seconds, ts will be the current time
+        // new items are push-ed so ther newest is at the end
+        function isCurrentRateFine(seconds) {
+            var limit = 0.0,
+                a = seconds.length,
+                b = 0,
+                throttled = false,
+                baseSecs = Date.now(),
+                i;
+
+            function rateLimit(x) {
+                return Math.min((4.1484 * Math.log(x < 2 ? 2 : x) + 1.02242), 20);
+            }
+
+            for (i = seconds.length - 1; i > 0; i = i - 1) {
+                limit = rateLimit(a - i);
+
+                if (baseSecs - seconds[i] < limit && !throttled) {
+                    throttled = true;
+                    b = limit - (baseSecs - seconds[i]);
+                    baseSecs = seconds[i];
+                } else {
+                    if (b - (baseSecs - seconds[i]) < 0) {
+                        a = i;
+                        throttled = false;
+                        baseSecs = seconds[i];
+                    }
+                    if (baseSecs - seconds[i] > limit && !throttled) {
+                        throttled = false;
+                    }
+
+                    if (baseSecs - seconds[i] > limit * 2) {
+                        a = i;
+                        throttled = false;
+                        baseSecs = seconds[i];
+                    }
+                }
+            }
+
+            limit = rateLimit(a);
+
+			return !(baseSecs - seconds[0] < limit);
+        }
+
         // this sends out chatmessage while we are within the rate-limits
         window.setInterval(function () {
-            var txt, rate;
-            // do some curve fitting here, but for now...
-            if (ownmsg[ownmsg.length - 1] < (Date.now() - throttle)) {
+            var txt;
+            if (isCurrentRateFine(ownmsg)) {
                 txt = msg.shift();
                 if (txt !== undefined) {
                     realsend(txt);
