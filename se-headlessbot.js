@@ -2,7 +2,7 @@
 (function (remotestates) {
     "use strict";
     var room = parseInt(/http:\/\/(\w+\.)*\w+\/rooms\/(\S+?)(\/|$)/.exec(document.location.href)[2], 10),
-        thisuser = CHAT.user.current().id,
+        thisuser = CHAT.CURRENT_USER_ID,
 		roomOwners = [],
 		seenUsers = [],
         msg = [],
@@ -32,18 +32,23 @@
 		s   = seconds
 	*/
     function send(txt, sorm, s) {
-	    var time;
+	    var time,
+			preptxt = (txt.indexOf(':') !== 0 ? prep : '') + txt;
 	    if (s === undefined && sorm === undefined) {
-			msg.push(txt);
+			msg.push(preptxt);
 		} else {
 			if (s === undefined) {
 				time = seconds(sorm);
 			} else {
 				time = minutes(sorm) + seconds(s);
 			}
-			window.setTimeout(function () { msg.push(txt); }, getRandomArbitrary(time, time + (time / 2)));
+			window.setTimeout(function () { msg.push(preptxt); }, getRandomArbitrary(time, time + (time / 2)));
 		}
     }
+
+	function sendraw(txt) {
+		msg.push(txt);
+	}
 
      /* these commands are for the owner that runs them*/
     function handleCommands(ce) {
@@ -79,7 +84,7 @@
 				} else {
 					lastcnt = lastcnt + 1;
 					if (lastcnt === 3) {
-						send(last);
+						sendraw(last);
 					}
 				}
             }
@@ -210,7 +215,7 @@
             next: function (ce) {
 				switch (state) {
 				case 1:
-					send('One cupcake on it\'s way for @' + ce.user_name + ' ....');
+					send('One cupcake on its way for @' + ce.user_name + ' ....');
 					send(':' + ce.message_id + ' http://i.stack.imgur.com/87OMls.jpg', 25);
 					last = Date.now();
 					state = 2;
@@ -354,7 +359,7 @@
     states.push(unk);
 
     function handleEvent(ce) {
-        var i, commandExecuted, length, state, cmdRegex = /^(!!\w+)($|\s(.*))/, cmd;
+        var i, commandExecuted, length, state, cmdRegex = /^(!!\w+)($|\s(\w*))/, cmd;
         commandExecuted = false;
 		if (ce.user_id === thisuser) {
             commandExecuted = handleCommands(ce);
@@ -363,6 +368,7 @@
 		for (i = 0; i < length; i = i + 1) {
 			state = states[i];
 			cmd = cmdRegex.exec(ce.content);
+			debugger;
 			if ((state.events !== undefined && (state.events.indexOf(ce.event_type) > -1)) &&
 					(state.command === undefined || (cmd !== null && cmd.length > 0 && cmd[1] === state.command))) {
 				if (cmd !== null && cmd.length > 1) {
@@ -485,7 +491,10 @@
                 console.log(txt);
             } else {
                 $.post('/chats/' + room.toString() + '/messages/new',
-                    {text: (txt.indexOf(':') !== 0 ? prep : '') + txt, fkey : fkey().fkey }).fail(
+					{
+						text:  txt,
+						fkey : fkey().fkey
+					}).fail(
                     function (jqxhr) {
                         if (jqxhr.status === 409) {
                             //conflict, aka throttled
